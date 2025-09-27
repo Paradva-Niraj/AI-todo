@@ -4,6 +4,7 @@ import '../widgets/auth_scaffold.dart';
 import '../widgets/centered_text_field.dart';
 import '../widgets/animated_submit_button.dart';
 import 'register_screen.dart';
+import 'dashboard_screen.dart';
 import 'home_screen.dart';
 import '../services/auth_service.dart';
 
@@ -26,7 +27,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     _password.dispose();
     super.dispose();
   }
-
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
@@ -34,13 +34,17 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     final result = await AuthService.login(_email.text.trim(), _password.text);
     setState(() => _loading = false);
 
+    // debug printing:
+    print('Login result: $result');
+
     final msg = result['message'] ?? (result['ok'] == true ? 'Success' : 'Something went wrong');
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
     if (result['ok'] == true) {
-      // Navigate to Home and remove previous routes
-      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomeScreen()));
-    }
+  final token = await AuthService.getToken();
+  print('Saved token: $token');
+  Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const DashboardScreen()));
+}
   }
 
   @override

@@ -1,27 +1,32 @@
+// lib/app.dart
 import 'package:flutter/material.dart';
 import 'screens/login_screen.dart';
+import 'screens/dashboard_screen.dart';
 
 class AiTodoApp extends StatelessWidget {
-  const AiTodoApp({super.key});
+  final bool startAtDashboard;
+  const AiTodoApp({super.key, this.startAtDashboard = false});
 
   @override
   Widget build(BuildContext context) {
+    final seed = Colors.deepPurple;
     return MaterialApp(
       title: 'AI Todo — Auth',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.grey.shade100,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
+        colorScheme: ColorScheme.fromSeed(seedColor: seed),
+        scaffoldBackgroundColor: Colors.grey.shade50,
+        appBarTheme: AppBarTheme(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
         ),
       ),
-      home: const LoginScreen(),
+      home: startAtDashboard ? const DashboardScreen() : const LoginScreen(),
+      routes: {
+        '/dashboard': (_) => const DashboardScreen(),
+        '/login': (_) => const LoginScreen(),
+      },
     );
   }
 }
