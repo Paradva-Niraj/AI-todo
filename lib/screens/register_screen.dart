@@ -1,8 +1,10 @@
+// lib/screens/register_screen.dart
 import 'package:flutter/material.dart';
 import '../widgets/auth_scaffold.dart';
 import '../widgets/centered_text_field.dart';
 import '../widgets/animated_submit_button.dart';
 import '../services/auth_service.dart';
+import 'home_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -34,8 +36,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final res = await AuthService.register(_name.text.trim(), _email.text.trim(), _password.text);
     setState(() => _loading = false);
 
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res['message'])));
-    if (res['ok']) Navigator.of(context).pop();
+    final msg = res['message'] ?? (res['ok'] == true ? 'Success' : 'Something went wrong');
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    if (res['ok'] == true) {
+      // Navigate to Home
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomeScreen()));
+    }
   }
 
   @override
@@ -47,14 +53,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
       child: Form(
         key: _formKey,
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          _CenteredTextField(
+          CenteredTextField(
             controller: _name,
             label: 'Full name',
             hint: 'Your display name',
             validator: (s) => (s ?? '').trim().length < 2 ? 'Enter a valid name' : null,
           ),
           const SizedBox(height: 10),
-          _CenteredTextField(
+          CenteredTextField(
             controller: _email,
             label: 'Email',
             hint: 'you@domain.com',
@@ -67,7 +73,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             },
           ),
           const SizedBox(height: 10),
-          _CenteredTextField(
+          CenteredTextField(
             controller: _password,
             label: 'Password',
             hint: 'At least 6 characters',
@@ -76,7 +82,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             validator: (s) => (s ?? '').length < 6 ? 'Password must be 6+ chars' : null,
           ),
           const SizedBox(height: 10),
-          _CenteredTextField(
+          CenteredTextField(
             controller: _confirm,
             label: 'Confirm password',
             hint: 'Repeat password',

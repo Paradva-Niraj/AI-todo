@@ -1,8 +1,10 @@
+// lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import '../widgets/auth_scaffold.dart';
 import '../widgets/centered_text_field.dart';
 import '../widgets/animated_submit_button.dart';
 import 'register_screen.dart';
+import 'home_screen.dart';
 import '../services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -32,9 +34,13 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     final result = await AuthService.login(_email.text.trim(), _password.text);
     setState(() => _loading = false);
 
-    final snack = SnackBar(content: Text(result['message']));
-    ScaffoldMessenger.of(context).showSnackBar(snack);
-    // In a real app navigate on success
+    final msg = result['message'] ?? (result['ok'] == true ? 'Success' : 'Something went wrong');
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+
+    if (result['ok'] == true) {
+      // Navigate to Home and remove previous routes
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomeScreen()));
+    }
   }
 
   @override
@@ -45,7 +51,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       child: Form(
         key: _formKey,
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          _CenteredTextField(
+          CenteredTextField(
             controller: _email,
             label: 'Email',
             hint: 'you@domain.com',
@@ -58,7 +64,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
             },
           ),
           const SizedBox(height: 12),
-          _CenteredTextField(
+          CenteredTextField(
             controller: _password,
             label: 'Password',
             hint: 'Enter your password',
