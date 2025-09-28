@@ -6,7 +6,7 @@ class TodoCard extends StatefulWidget {
   final Map<String, dynamic> todo;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
-  final Future<void> Function(String? date)? onCompleteForDate;
+  final Future<Map<String, dynamic>> Function(String? date)? onCompleteForDate;
   final DateTime? occurrenceDate;
 
   const TodoCard({
@@ -25,13 +25,26 @@ class TodoCard extends StatefulWidget {
 class _TodoCardState extends State<TodoCard> with SingleTickerProviderStateMixin {
   late bool _completed;
   late final AnimationController _anim;
+  bool _running = false;
 
   @override
   void initState() {
     super.initState();
     _completed = _computeCompleted();
-    _anim = AnimationController(vsync: this, duration: const Duration(milliseconds: 350));
+    _anim = AnimationController(vsync: this, duration: const Duration(milliseconds: 300));
     if (_completed) _anim.value = 1.0;
+  }
+
+  @override
+  void didUpdateWidget(covariant TodoCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // recompute if todo changed externally
+    final nowCompleted = _computeCompleted();
+    if (nowCompleted != _completed) {
+      setState(() => _completed = nowCompleted);
+      if (_completed) _anim.forward();
+      else _anim.reverse();
+    }
   }
 
   @override
@@ -81,12 +94,28 @@ class _TodoCardState extends State<TodoCard> with SingleTickerProviderStateMixin
   }
 
   Future<void> _onToggleComplete() async {
+    if (_running) return;
     if (widget.onCompleteForDate == null) return;
     final dateStr = widget.occurrenceDate != null ? DateFormat('yyyy-MM-dd').format(widget.occurrenceDate!) : null;
-    if (_completed) return; // already completed for date, do nothing
-    setState(() => _completed = true);
+
+    // If already completed for this date, do nothing client-side — parent will refresh if needed
+    if (_completed) return;
+
+    setState(() {
+      _running = true;
+      _completed = true;
+    });
     await _anim.forward();
-    await widget.onCompleteForDate!(dateStr);
+
+    try {
+      final res = await widget.onCompleteForDate!(dateStr);
+      // onCompleteForDate returns Map -> parent handles logic/refresh/snackbar
+      // After parent refresh, parent will rebuild this card with new todo contents.
+    } finally {
+      if (mounted) {
+        setState(() => _running = false);
+      }
+    }
   }
 
   @override

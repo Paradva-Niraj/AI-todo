@@ -25,7 +25,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     _initDays();
-    _fetchForRange();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchForRange();
+    });
     _pageController.addListener(() {
       final page = _pageController.page?.round() ?? _currentPage;
       if (page != _currentPage) setState(() => _currentPage = page);
@@ -39,11 +41,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   String _isoDate(DateTime d) => "${d.year.toString().padLeft(4,'0')}-${d.month.toString().padLeft(2,'0')}-${d.day.toString().padLeft(2,'0')}";
 
-  Future<void> _fetchForRange() async {
+  Future<void> _fetchForRange({bool forceRefresh = false}) async {
+    if (!mounted) return;
     setState(() => _loading = true);
     final start = _isoDate(days.first);
     final end = _isoDate(days.last);
-    final res = await TodoService.fetchRange(start, end);
+    final res = await TodoService.fetchRange(start, end, forceRefresh: forceRefresh);
+    if (!mounted) return;
     setState(() => _loading = false);
     if (res['ok'] == true) {
       final body = res['body'] as Map<String, dynamic>;
@@ -51,7 +55,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       setState(() => _fetchedTodos = data);
     } else {
       final err = res['error'] ?? (res['body']?['error'] ?? 'Failed to fetch todos');
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err.toString())));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err.toString())));
     }
   }
 
@@ -104,9 +108,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return out;
   }
 
-  // returns true if todo is completed for the provided day (either global or per-date)
   bool _isCompletedForDay(Map<String, dynamic> t, DateTime day) {
-    if (t['completed'] == true) return true; // global
+    if (t['completed'] == true) return true;
     final comps = t['completions'] as List<dynamic>?;
     if (comps == null) return false;
     return comps.any((c) {
@@ -115,28 +118,56 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
-  Future<void> _markCompleteFor(String id, String? dateStr) async {
+  // Returns the raw result map from service
+  Future<Map<String, dynamic>> _handleComplete(String id, String? dateStr) async {
     final res = await TodoService.markComplete(id, date: dateStr);
+    if (!mounted) return res;
     if (res['ok'] == true) {
-      await _fetchForRange();
+      // force a fresh fetch (bypass any cached 304)
+      await _fetchForRange(forceRefresh: true);
+      if (!mounted) return res;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Marked complete for the day')));
     } else if (res['status'] == 409 || (res['body']?['error']?.toString().toLowerCase().contains('already') ?? false)) {
-      await _fetchForRange();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Already marked complete for this date')));
+      // already completed: show undo option
+      await _fetchForRange(forceRefresh: true);
+      if (!mounted) return res;
+      final dateLabel = dateStr ?? '';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Already marked complete for this date'),
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () async {
+              if (dateStr == null) return;
+              final un = await TodoService.uncomplete(id, dateStr);
+              if (!mounted) return;
+              if (un['ok'] == true) {
+                await _fetchForRange(forceRefresh: true);
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reverted completion')));
+              } else {
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(un['error'] ?? un['body']?['error'] ?? 'Failed to undo')));
+              }
+            },
+          ),
+        ),
+      );
     } else {
       final msg = res['error'] ?? res['body']?['error'] ?? 'Failed';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg.toString())));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg.toString())));
     }
+    return res;
   }
 
   Future<void> _deleteTodo(String id) async {
     final res = await TodoService.deleteTodo(id);
+    if (!mounted) return;
     if (res['ok'] == true) {
-      await _fetchForRange();
+      await _fetchForRange(forceRefresh: true);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Deleted')));
     } else {
       final msg = res['error'] ?? res['body']?['error'] ?? 'Failed to delete';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg.toString())));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg.toString())));
     }
   }
 
@@ -154,7 +185,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() => days = [...newDays, ...days]);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final newPage = (currentPage + newDays.length).clamp(0, days.length - 1);
-      _pageController.jumpToPage(newPage);
+      if (_pageController.hasClients) _pageController.jumpToPage(newPage);
       setState(() => _currentPage = newPage);
     });
     _fetchForRange();
@@ -162,12 +193,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _openEditor({Map<String, dynamic>? todo}) async {
     final res = await Navigator.of(context).push(MaterialPageRoute(builder: (_) => TodoEditorScreen(todo: todo)));
-    if (res == true) await _fetchForRange();
+    if (!mounted) return;
+    if (res == true) await _fetchForRange(forceRefresh: true);
   }
 
   Future<void> _openSchedule() async {
     final res = await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ScheduleScreen()));
-    if (res == true) await _fetchForRange();
+    if (!mounted) return;
+    if (res == true) await _fetchForRange(forceRefresh: true);
   }
 
   Future<void> _logout() async {
@@ -205,95 +238,83 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
         elevation: 0,
       ),
-      body: Stack(
-        children: [
-          RefreshIndicator(
-            onRefresh: () async {
-              await _fetchForRange();
-              return;
-            },
-            child: Column(children: [
-              Padding(
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await _fetchForRange(forceRefresh: true);
+          return;
+        },
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Card(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Card(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    child: Row(children: [
-                      Expanded(
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(DateFormat('EEEE').format(currentDay), style: const TextStyle(fontSize: 14, color: Colors.black54)),
-                          const SizedBox(height: 6),
-                          Text(DateFormat('d MMM yyyy').format(currentDay), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-                        ]),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(color: Colors.deepPurple.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
-                        child: Row(children: [const Icon(Icons.calendar_today, size: 16, color: Colors.deepPurple), const SizedBox(width: 8), Text('${_currentPage + 1}/${days.length}', style: const TextStyle(fontWeight: FontWeight.w700))]),
-                      ),
+                child: Row(children: [
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(DateFormat('EEEE').format(currentDay), style: const TextStyle(fontSize: 14, color: Colors.black54)),
+                      const SizedBox(height: 6),
+                      Text(DateFormat('d MMM yyyy').format(currentDay), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                     ]),
                   ),
-                ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(color: Colors.deepPurple.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+                    child: Row(children: [const Icon(Icons.calendar_today, size: 16, color: Colors.deepPurple), const SizedBox(width: 8), Text('${_currentPage + 1}/${days.length}', style: const TextStyle(fontWeight: FontWeight.w700))]),
+                  ),
+                ]),
               ),
-              Expanded(
-                child: _loading
-                    ? const Center(child: CircularProgressIndicator())
-                    : PageView.builder(
-                        controller: _pageController,
-                        itemCount: days.length,
-                        itemBuilder: (context, index) {
-                          final day = days[index];
-                          final occurrences = _occurrencesForDay(day);
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text('Tasks', style: Theme.of(context).textTheme.titleMedium),
-                              const SizedBox(height: 8),
-                              Expanded(
-                                child: occurrences.isEmpty
-                                    ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.hourglass_empty, size: 48, color: Colors.grey.shade400), const SizedBox(height: 8), const Text('No tasks for this day', style: TextStyle(color: Colors.black54))]))
-                                    : ListView.builder(
-                                        itemCount: occurrences.length,
-                                        itemBuilder: (c, i) {
-                                          final t = occurrences[i] as Map<String, dynamic>;
-                                          final id = t['_id'] ?? t['id'];
-                                          final isPast = t['date'] != null
-                                              ? DateTime.parse(t['date']).isBefore(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day))
-                                              : false;
-                                          final completedForThisDay = _isCompletedForDay(t, day);
-
-                                          return TodoCard(
-                                            todo: t,
-                                            occurrenceDate: day,
-                                            onEdit: (completedForThisDay || isPast) ? null : () => _openEditor(todo: t),
-                                            onDelete: (completedForThisDay || isPast) ? null : () => _deleteTodo(id),
-                                            onCompleteForDate: (dateStr) async {
-                                              final res = await TodoService.markComplete(id, date: dateStr);
-                                              if (res['ok'] == true) {
-                                                await _fetchForRange();
-                                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Marked complete for the day')));
-                                              } else if (res['status'] == 409 || (res['body']?['error']?.toString().toLowerCase().contains('already') ?? false)) {
-                                                await _fetchForRange();
-                                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Already marked complete for this date')));
-                                              } else {
-                                                final msg = res['error'] ?? res['body']?['error'] ?? 'Failed';
-                                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg.toString())));
-                                              }
-                                            },
-                                          );
-                                        },
-                                      ),
-                              ),
-                            ]),
-                          );
-                        },
-                        onPageChanged: (p) => setState(() => _currentPage = p),
-                      ),
-              ),
-            ]),
+            ),
           ),
-        ],
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : PageView.builder(
+                    controller: _pageController,
+                    itemCount: days.length,
+                    itemBuilder: (context, index) {
+                      final day = days[index];
+                      final occurrences = _occurrencesForDay(day);
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text('Tasks', style: Theme.of(context).textTheme.titleMedium),
+                          const SizedBox(height: 8),
+                          Expanded(
+                            child: occurrences.isEmpty
+                                ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.hourglass_empty, size: 48, color: Colors.grey.shade400), const SizedBox(height: 8), const Text('No tasks for this day', style: TextStyle(color: Colors.black54))]))
+                                : ListView.builder(
+                                    itemCount: occurrences.length,
+                                    itemBuilder: (c, i) {
+                                      final t = occurrences[i] as Map<String, dynamic>;
+                                      final id = t['_id'] ?? t['id'];
+                                      final isPast = t['date'] != null
+                                          ? DateTime.parse(t['date']).isBefore(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day))
+                                          : false;
+                                      final completedForThisDay = _isCompletedForDay(t, day);
+
+                                      return TodoCard(
+                                        todo: t,
+                                        occurrenceDate: day,
+                                        onEdit: (completedForThisDay || isPast) ? null : () => _openEditor(todo: t),
+                                        onDelete: (completedForThisDay || isPast) ? null : () => _deleteTodo(id),
+                                        onCompleteForDate: (dateStr) async {
+                                          // call parent handler that refreshes + handles 409 and undo
+                                          final result = await _handleComplete(id, dateStr);
+                                          return result;
+                                        },
+                                      );
+                                    },
+                                  ),
+                          ),
+                        ]),
+                      );
+                    },
+                    onPageChanged: (p) => setState(() => _currentPage = p),
+                  ),
+          ),
+        ]),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openEditor(),
