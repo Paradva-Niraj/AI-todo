@@ -4,11 +4,6 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService {
-  // Adjust baseUrl depending on platform:
-  // - Android emulator: http://10.0.2.2:3000
-  // - iOS simulator: http://localhost:3000
-  // - Web / desktop: http://localhost:3000 (if backend reachable)
-  // - Physical device: use machine LAN IP e.g. http://192.168.x.y:3000
   static const String baseUrl = 'http://localhost:3000';
 
   static Future<Map<String, dynamic>> register(String name, String email, String password) async {
@@ -26,7 +21,7 @@ class AuthService {
       }
       return map;
     } catch (e) {
-      return {'ok': false, 'message': 'Network error: ${e.toString()}'} ;
+      return {'ok': false, 'message': 'Network error: ${e.toString()}'};
     }
   }
 
@@ -45,7 +40,37 @@ class AuthService {
       }
       return map;
     } catch (e) {
-      return {'ok': false, 'message': 'Network error: ${e.toString()}'} ;
+      return {'ok': false, 'message': 'Network error: ${e.toString()}'};
+    }
+  }
+
+  /// Validate if current token is still valid by making a test API call
+  static Future<bool> isTokenValid() async {
+    final token = await getToken();
+    if (token == null || token.isEmpty) return false;
+
+    try {
+      // Make a lightweight API call to verify token
+      final url = Uri.parse('$baseUrl/api/todos/range?start=2025-01-01&end=2025-01-02');
+      final resp = await http.get(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 5));
+
+      // If we get 401, token is invalid/expired
+      if (resp.statusCode == 401) {
+        await logout(); // Clear invalid token
+        return false;
+      }
+
+      // Any 2xx response means token is valid
+      return resp.statusCode >= 200 && resp.statusCode < 300;
+    } catch (e) {
+      // Network error - assume token might be valid, let user try
+      return true;
     }
   }
 

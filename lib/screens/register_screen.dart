@@ -4,7 +4,7 @@ import '../widgets/auth_scaffold.dart';
 import '../widgets/centered_text_field.dart';
 import '../widgets/animated_submit_button.dart';
 import '../services/auth_service.dart';
-import 'home_screen.dart';
+import 'dashboard_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -39,8 +39,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final msg = res['message'] ?? (res['ok'] == true ? 'Success' : 'Something went wrong');
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     if (res['ok'] == true) {
-      // Navigate to Home
-      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomeScreen()));
+      // Navigate to Dashboard after successful registration
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const DashboardScreen()));
     }
   }
 

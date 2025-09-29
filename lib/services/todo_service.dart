@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/date_helper.dart';
 
 class TodoService {
   static const String baseUrl = 'http://localhost:3000';
@@ -11,100 +12,187 @@ class TodoService {
     return prefs.getString('auth_token');
   }
 
-  static Future<Map<String, dynamic>> fetchRange(String startIso, String endIso, {bool forceRefresh = false}) async {
+  static Map<String, String> _headers(String? token) {
+    return {
+      'Content-Type': 'application/json',
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
+  }
+
+  /// Fetch todos in a date range
+  static Future<Map<String, dynamic>> fetchRange(
+    String startIso,
+    String endIso, {
+    bool forceRefresh = false,
+  }) async {
     final token = await _token();
-    // Add cache-busting param when forcing refresh
     final cb = forceRefresh ? '&_cb=${DateTime.now().millisecondsSinceEpoch}' : '';
     final url = Uri.parse('$baseUrl/api/todos/range?start=$startIso&end=$endIso$cb');
+
     try {
-      final resp = await http.get(url, headers: {
-        'Content-Type': 'application/json',
-        if (token != null) 'Authorization': 'Bearer $token'
-      }).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .get(url, headers: _headers(token))
+          .timeout(const Duration(seconds: 10));
+
       final body = resp.body.isNotEmpty ? jsonDecode(resp.body) : {};
-      return {'ok': resp.statusCode >= 200 && resp.statusCode < 300, 'status': resp.statusCode, 'body': body};
+
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        return {'ok': true, 'status': resp.statusCode, 'body': body};
+      } else {
+        return {
+          'ok': false,
+          'status': resp.statusCode,
+          'body': body,
+          'error': body['error'] ?? 'Request failed with status ${resp.statusCode}',
+        };
+      }
     } catch (e) {
-      return {'ok': false, 'error': e.toString()};
+      return {'ok': false, 'error': 'Network error: ${e.toString()}'};
     }
   }
 
-  static Future<Map<String, dynamic>> markComplete(String id, {String? date}) async {
+  /// Mark a todo complete for a specific date
+  static Future<Map<String, dynamic>> markComplete(
+    String id, {
+    String? date,
+  }) async {
     final token = await _token();
     final qs = date != null ? '?date=$date' : '';
     final url = Uri.parse('$baseUrl/api/todos/$id/complete$qs');
+
     try {
-      final resp = await http.patch(url, headers: {
-        'Content-Type': 'application/json',
-        if (token != null) 'Authorization': 'Bearer $token'
-      }).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .patch(url, headers: _headers(token))
+          .timeout(const Duration(seconds: 10));
+
       final body = resp.body.isNotEmpty ? jsonDecode(resp.body) : {};
-      return {'ok': resp.statusCode >= 200 && resp.statusCode < 300, 'status': resp.statusCode, 'body': body};
+
+      return {
+        'ok': resp.statusCode >= 200 && resp.statusCode < 300,
+        'status': resp.statusCode,
+        'body': body,
+        'error': body['error'],
+      };
     } catch (e) {
-      return {'ok': false, 'error': e.toString()};
+      return {'ok': false, 'error': 'Network error: ${e.toString()}'};
     }
   }
 
-  // New: uncomplete (undo per-date completion)
+  /// Uncomplete a todo for a specific date
   static Future<Map<String, dynamic>> uncomplete(String id, String date) async {
     final token = await _token();
     final url = Uri.parse('$baseUrl/api/todos/$id/uncomplete?date=$date');
+
     try {
-      final resp = await http.patch(url, headers: {
-        'Content-Type': 'application/json',
-        if (token != null) 'Authorization': 'Bearer $token'
-      }).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .patch(url, headers: _headers(token))
+          .timeout(const Duration(seconds: 10));
+
       final body = resp.body.isNotEmpty ? jsonDecode(resp.body) : {};
-      return {'ok': resp.statusCode >= 200 && resp.statusCode < 300, 'status': resp.statusCode, 'body': body};
+
+      return {
+        'ok': resp.statusCode >= 200 && resp.statusCode < 300,
+        'status': resp.statusCode,
+        'body': body,
+        'error': body['error'],
+      };
     } catch (e) {
-      return {'ok': false, 'error': e.toString()};
+      return {'ok': false, 'error': 'Network error: ${e.toString()}'};
     }
   }
 
+  /// Delete a todo
   static Future<Map<String, dynamic>> deleteTodo(String id) async {
     final token = await _token();
     final url = Uri.parse('$baseUrl/api/todos/$id');
+
     try {
-      final resp = await http.delete(url, headers: {
-        if (token != null) 'Authorization': 'Bearer $token'
-      }).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .delete(url, headers: _headers(token))
+          .timeout(const Duration(seconds: 10));
+
       final body = resp.body.isNotEmpty ? jsonDecode(resp.body) : {};
-      return {'ok': resp.statusCode >= 200 && resp.statusCode < 300, 'status': resp.statusCode, 'body': body};
+
+      return {
+        'ok': resp.statusCode >= 200 && resp.statusCode < 300,
+        'status': resp.statusCode,
+        'body': body,
+        'error': body['error'],
+      };
     } catch (e) {
-      return {'ok': false, 'error': e.toString()};
+      return {'ok': false, 'error': 'Network error: ${e.toString()}'};
     }
   }
 
+  /// Create a new todo
   static Future<Map<String, dynamic>> createTodo(Map<String, dynamic> data) async {
     final token = await _token();
     final url = Uri.parse('$baseUrl/api/todos');
+
     try {
-      final resp = await http.post(url,
-          headers: {
-            'Content-Type': 'application/json',
-            if (token != null) 'Authorization': 'Bearer $token'
-          },
-          body: jsonEncode(data)).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .post(url, headers: _headers(token), body: jsonEncode(data))
+          .timeout(const Duration(seconds: 10));
+
       final body = resp.body.isNotEmpty ? jsonDecode(resp.body) : {};
-      return {'ok': resp.statusCode >= 200 && resp.statusCode < 300, 'status': resp.statusCode, 'body': body};
+
+      return {
+        'ok': resp.statusCode >= 200 && resp.statusCode < 300,
+        'status': resp.statusCode,
+        'body': body,
+        'error': body['error'],
+      };
     } catch (e) {
-      return {'ok': false, 'error': e.toString()};
+      return {'ok': false, 'error': 'Network error: ${e.toString()}'};
     }
   }
 
-  static Future<Map<String, dynamic>> updateTodo(String id, Map<String, dynamic> data) async {
+  /// Update an existing todo
+  static Future<Map<String, dynamic>> updateTodo(
+    String id,
+    Map<String, dynamic> data,
+  ) async {
     final token = await _token();
     final url = Uri.parse('$baseUrl/api/todos/$id');
+
     try {
-      final resp = await http.put(url,
-          headers: {
-            'Content-Type': 'application/json',
-            if (token != null) 'Authorization': 'Bearer $token'
-          },
-          body: jsonEncode(data)).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .put(url, headers: _headers(token), body: jsonEncode(data))
+          .timeout(const Duration(seconds: 10));
+
       final body = resp.body.isNotEmpty ? jsonDecode(resp.body) : {};
-      return {'ok': resp.statusCode >= 200 && resp.statusCode < 300, 'status': resp.statusCode, 'body': body};
+
+      return {
+        'ok': resp.statusCode >= 200 && resp.statusCode < 300,
+        'status': resp.statusCode,
+        'body': body,
+        'error': body['error'],
+      };
     } catch (e) {
-      return {'ok': false, 'error': e.toString()};
+      return {'ok': false, 'error': 'Network error: ${e.toString()}'};
+    }
+  }
+
+  /// Fetch all categories
+  static Future<Map<String, dynamic>> fetchCategories() async {
+    final token = await _token();
+    final url = Uri.parse('$baseUrl/api/categories');
+
+    try {
+      final resp = await http
+          .get(url, headers: _headers(token))
+          .timeout(const Duration(seconds: 10));
+
+      final body = resp.body.isNotEmpty ? jsonDecode(resp.body) : {};
+
+      return {
+        'ok': resp.statusCode >= 200 && resp.statusCode < 300,
+        'status': resp.statusCode,
+        'body': body,
+        'error': body['error'],
+      };
+    } catch (e) {
+      return {'ok': false, 'error': 'Network error: ${e.toString()}'};
     }
   }
 }
