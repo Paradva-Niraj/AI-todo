@@ -57,8 +57,10 @@ class _TodoEditorScreenState extends State<TodoEditorScreen> {
         _time = t['time'] ?? '';
       }
 
+      // NOTE: fromIsoDateString reads only YYYY-MM-DD part and returns a local
+      // DateTime at midnight. This avoids timezone shifts.
       if (t['date'] != null) {
-        _selectedDate = DateHelper.fromIsoDateString(t['date']);
+        _selectedDate = DateHelper.fromIsoDateString(t['date'].toString());
       }
     }
   }
@@ -118,15 +120,28 @@ class _TodoEditorScreenState extends State<TodoEditorScreen> {
       'description': _desc.text.trim(),
     };
 
+    // Build payload with explicit intention:
+    // - If one-time: include date only if user selected one (or when creating new task
+    //   and no date chosen, set today). This prevents accidentally overwriting an
+    //   existing task's date when the user didn't intend to.
     if (_type == 'one-time') {
       payload['type'] = 'one-time';
-      
-      if (_selectedDate != null) {
-        payload['date'] = DateHelper.toIsoDateString(_selectedDate!);
+
+      if (widget.todo == null) {
+        // Creating a new task: if user didn't pick a date, default to today
+        final dateToSend = _selectedDate ?? DateTime.now();
+        payload['date'] = DateHelper.toIsoDateString(dateToSend);
       } else {
-        payload['date'] = DateHelper.toIsoDateString(DateTime.now());
+        // Editing an existing task: only send date if user explicitly chose/cleared it
+        if (_selectedDate != null) {
+          payload['date'] = DateHelper.toIsoDateString(_selectedDate!);
+        } else {
+          // User cleared the date (set to null) => explicitly remove date on server
+          // If you don't want clearing to remove date, comment out the next line.
+          payload['date'] = null;
+        }
       }
-      
+
       if (_time.isNotEmpty) {
         payload['time'] = _time;
       }
@@ -151,6 +166,13 @@ class _TodoEditorScreenState extends State<TodoEditorScreen> {
         payload['date'] = DateHelper.toIsoDateString(_selectedDate!);
       }
     }
+
+    // DEBUG: print date fields and payload so you can confirm what's being sent
+    debugPrint('--- TodoEditor: saving ---');
+    debugPrint('isNew: ${widget.todo == null}');
+    debugPrint('selectedDate (local): $_selectedDate');
+    debugPrint('selectedDate ISO (to send): ${payload['date']}');
+    debugPrint('payload: $payload');
 
     Map<String, dynamic> res;
     if (widget.todo != null) {
