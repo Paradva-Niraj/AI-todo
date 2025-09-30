@@ -1,5 +1,5 @@
 // lib/screens/dashboard_screen.dart
-// Add this method to handle 401 errors throughout the app
+// Dashboard with AI integration: AppBar button and optional swipe-up opening.
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -9,6 +9,7 @@ import '../widgets/todo_card.dart';
 import '../utils/date_helper.dart';
 import 'todo_editor_screen.dart';
 import 'schedule_screen.dart';
+import 'ai_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -67,7 +68,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _handleUnauthorized() async {
     await AuthService.logout();
     if (!mounted) return;
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Session expired. Please login again.'),
@@ -75,7 +76,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         duration: Duration(seconds: 3),
       ),
     );
-    
+
     // Navigate to login and clear all routes
     Navigator.of(context).pushNamedAndRemoveUntil('/login', (r) => false);
   }
@@ -231,7 +232,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final res = await TodoService.uncomplete(id, dateStr);
 
     if (!mounted) return;
-    
+
     _checkAuthError(res);
 
     if (res['ok'] == true) {
@@ -270,7 +271,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final res = await TodoService.deleteTodo(id);
 
     if (!mounted) return;
-    
+
     _checkAuthError(res);
 
     if (res['ok'] == true) {
@@ -307,17 +308,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _openEditor({Map<String, dynamic>? todo}) async {
-  final result = await Navigator.of(context).push<bool>(
-    MaterialPageRoute(builder: (_) => TodoEditorScreen(todo: todo)), // Todos loaded inside editor
-  );
-  if (result == true && mounted) {
-    await _fetchForRange(forceRefresh: true);
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => TodoEditorScreen(todo: todo)), // Todos loaded inside editor
+    );
+    if (result == true && mounted) {
+      await _fetchForRange(forceRefresh: true);
+    }
   }
-}
 
   Future<void> _openSchedule() async {
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => const ScheduleScreen()),
+    );
+    if (result == true && mounted) {
+      await _fetchForRange(forceRefresh: true);
+    }
+  }
+
+  Future<void> _openAi() async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const AiScreen()),
     );
     if (result == true && mounted) {
       await _fetchForRange(forceRefresh: true);
@@ -385,6 +395,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         actions: [
           IconButton(onPressed: _openSchedule, icon: const Icon(Icons.schedule), tooltip: 'Schedule'),
+          IconButton(
+            onPressed: _openAi,
+            icon: const Icon(Icons.smart_toy),
+            tooltip: 'AI Assistant',
+          ),
           IconButton(onPressed: _logout, icon: const Icon(Icons.logout), tooltip: 'Logout'),
         ],
       ),
@@ -394,57 +409,66 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Text(
-                                  DateFormat('EEEE').format(currentDay),
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: isToday ? Theme.of(context).colorScheme.primary : Colors.black54,
-                                    fontWeight: isToday ? FontWeight.w600 : FontWeight.normal,
-                                  ),
-                                ),
-                                if (isToday) ...[
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(context).colorScheme.primary,
-                                      borderRadius: BorderRadius.circular(10),
+              child: GestureDetector(
+                onVerticalDragEnd: (details) {
+                  // If user flings upward with sufficient velocity, open AI screen.
+                  // Negative primaryVelocity => upward fling. Threshold tuned to -400.
+                  if (details.primaryVelocity != null && details.primaryVelocity! < -400) {
+                    _openAi();
+                  }
+                },
+                child: Card(
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    DateFormat('EEEE').format(currentDay),
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: isToday ? Theme.of(context).colorScheme.primary : Colors.black54,
+                                      fontWeight: isToday ? FontWeight.w600 : FontWeight.normal,
                                     ),
-                                    child: const Text('Today', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
                                   ),
+                                  if (isToday) ...[
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context).colorScheme.primary,
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: const Text('Today', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                                    ),
+                                  ],
                                 ],
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Text(DateFormat('d MMM yyyy').format(currentDay), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-                          ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text(DateFormat('d MMM yyyy').format(currentDay), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                            ],
+                          ),
                         ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(color: Colors.deepPurple.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.calendar_today, size: 16, color: Colors.deepPurple),
-                            const SizedBox(width: 8),
-                            Text('${_currentPage + 1}/${_days.length}', style: const TextStyle(fontWeight: FontWeight.w700)),
-                          ],
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(color: Colors.deepPurple.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.calendar_today, size: 16, color: Colors.deepPurple),
+                              const SizedBox(width: 8),
+                              Text('${_currentPage + 1}/${_days.length}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
