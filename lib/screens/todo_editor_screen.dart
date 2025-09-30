@@ -1,6 +1,7 @@
 // lib/screens/todo_editor_screen.dart
 import 'package:flutter/material.dart';
 import '../services/todo_service.dart';
+import '../services/schedule_validator.dart';
 import '../utils/date_helper.dart';
 
 class TodoEditorScreen extends StatefulWidget {
@@ -18,20 +19,17 @@ class _TodoEditorScreenState extends State<TodoEditorScreen> {
   DateTime? _selectedDate;
   String _time = '';
   bool _saving = false;
+  List<dynamic> _allTodos = [];
+  bool _loadingTodos = false;
 
-  final List<String> _weekDays = [
-    'monday',
-    'tuesday',
-    'wednesday',
-    'thursday',
-    'friday',
-    'saturday'
-  ];
+  final List<String> _weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
   final Set<String> _selectedWeekDays = {};
 
   @override
   void initState() {
     super.initState();
+    _loadAllTodos();
+    
     final t = widget.todo;
     if (t != null) {
       _title.text = t['title'] ?? '';
@@ -45,10 +43,7 @@ class _TodoEditorScreenState extends State<TodoEditorScreen> {
       } else if (rtype == 'weekly') {
         _type = 'weekly';
         _time = rec['time'] ?? t['time'] ?? '';
-        final days = (rec['days'] as List<dynamic>?)
-                ?.map((e) => e.toString().toLowerCase())
-                .toList() ??
-            [];
+        final days = (rec['days'] as List<dynamic>?)?.map((e) => e.toString().toLowerCase()).toList() ?? [];
         for (final d in days) {
           if (_weekDays.contains(d)) _selectedWeekDays.add(d);
         }
@@ -57,11 +52,29 @@ class _TodoEditorScreenState extends State<TodoEditorScreen> {
         _time = t['time'] ?? '';
       }
 
-      // NOTE: fromIsoDateString reads only YYYY-MM-DD part and returns a local
-      // DateTime at midnight. This avoids timezone shifts.
       if (t['date'] != null) {
         _selectedDate = DateHelper.fromIsoDateString(t['date'].toString());
       }
+    }
+  }
+
+  Future<void> _loadAllTodos() async {
+    setState(() => _loadingTodos = true);
+    final start = DateTime.now().subtract(const Duration(days: 365));
+    final end = DateTime.now().add(const Duration(days: 365));
+    
+    final res = await TodoService.fetchRange(
+      DateHelper.toIsoDateString(start),
+      DateHelper.toIsoDateString(end),
+    );
+    
+    setState(() => _loadingTodos = false);
+
+    if (res['ok'] == true) {
+      final body = res['body'] as Map<String, dynamic>;
+      setState(() {
+        _allTodos = body['data'] as List<dynamic>? ?? [];
+      });
     }
   }
 
@@ -94,10 +107,7 @@ class _TodoEditorScreenState extends State<TodoEditorScreen> {
       } catch (_) {}
     }
 
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: initial ?? TimeOfDay.now(),
-    );
+    final picked = await showTimePicker(context: context, initialTime: initial ?? TimeOfDay.now());
     if (picked != null) {
       setState(() {
         _time = '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
@@ -105,13 +115,76 @@ class _TodoEditorScreenState extends State<TodoEditorScreen> {
     }
   }
 
+  Future<bool> _checkAndHandleConflicts() async {
+    if (_time.isEmpty) return true;
+
+    final checkDate = _selectedDate ?? DateTime.now();
+    final todoId = widget.todo?['_id'] ?? widget.todo?['id'];
+
+    final conflict = ScheduleValidator.checkTaskConflicts(
+      taskDate: checkDate,
+      taskTime: _time,
+      allTodos: _allTodos,
+      excludeTodoId: todoId,
+    );
+
+    if (conflict['hasConflict'] == true) {
+      final message = conflict['message'] ?? 'Time conflict detected';
+      
+      final proceed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
+              SizedBox(width: 12),
+              Text('Time Conflict'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(message),
+              const SizedBox(height: 16),
+              const Text(
+                'Do you want to add this task anyway?',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: FilledButton.styleFrom(backgroundColor: Colors.orange),
+              child: const Text('Add Anyway'),
+            ),
+          ],
+        ),
+      );
+
+      return proceed ?? false;
+    }
+
+    return true;
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
     if (_type == 'weekly' && _selectedWeekDays.isEmpty) {
-      _showSnackbar('Please select at least one weekday for weekly tasks', isError: true);
+      _showSnackbar('Please select at least one weekday', isError: true);
       return;
     }
+
+    // Check for conflicts
+    final canProceed = await _checkAndHandleConflicts();
+    if (!canProceed) return;
 
     setState(() => _saving = true);
 
@@ -120,59 +193,20 @@ class _TodoEditorScreenState extends State<TodoEditorScreen> {
       'description': _desc.text.trim(),
     };
 
-    // Build payload with explicit intention:
-    // - If one-time: include date only if user selected one (or when creating new task
-    //   and no date chosen, set today). This prevents accidentally overwriting an
-    //   existing task's date when the user didn't intend to.
     if (_type == 'one-time') {
       payload['type'] = 'one-time';
-
-      if (widget.todo == null) {
-        // Creating a new task: if user didn't pick a date, default to today
-        final dateToSend = _selectedDate ?? DateTime.now();
-        payload['date'] = DateHelper.toIsoDateString(dateToSend);
-      } else {
-        // Editing an existing task: only send date if user explicitly chose/cleared it
-        if (_selectedDate != null) {
-          payload['date'] = DateHelper.toIsoDateString(_selectedDate!);
-        } else {
-          // User cleared the date (set to null) => explicitly remove date on server
-          // If you don't want clearing to remove date, comment out the next line.
-          payload['date'] = null;
-        }
-      }
-
-      if (_time.isNotEmpty) {
-        payload['time'] = _time;
-      }
+      payload['date'] = DateHelper.toIsoDateString(_selectedDate ?? DateTime.now());
+      if (_time.isNotEmpty) payload['time'] = _time;
       payload['recurrence'] = {'type': 'none'};
     } else if (_type == 'daily') {
       payload['type'] = 'recurring';
-      payload['recurrence'] = {
-        'type': 'daily',
-        'time': _time.isNotEmpty ? _time : null,
-      };
-      if (_selectedDate != null) {
-        payload['date'] = DateHelper.toIsoDateString(_selectedDate!);
-      }
+      payload['recurrence'] = {'type': 'daily', 'time': _time.isNotEmpty ? _time : null};
+      if (_selectedDate != null) payload['date'] = DateHelper.toIsoDateString(_selectedDate!);
     } else if (_type == 'weekly') {
       payload['type'] = 'recurring';
-      payload['recurrence'] = {
-        'type': 'weekly',
-        'days': _selectedWeekDays.toList(),
-        'time': _time.isNotEmpty ? _time : null,
-      };
-      if (_selectedDate != null) {
-        payload['date'] = DateHelper.toIsoDateString(_selectedDate!);
-      }
+      payload['recurrence'] = {'type': 'weekly', 'days': _selectedWeekDays.toList(), 'time': _time.isNotEmpty ? _time : null};
+      if (_selectedDate != null) payload['date'] = DateHelper.toIsoDateString(_selectedDate!);
     }
-
-    // DEBUG: print date fields and payload so you can confirm what's being sent
-    debugPrint('--- TodoEditor: saving ---');
-    debugPrint('isNew: ${widget.todo == null}');
-    debugPrint('selectedDate (local): $_selectedDate');
-    debugPrint('selectedDate ISO (to send): ${payload['date']}');
-    debugPrint('payload: $payload');
 
     Map<String, dynamic> res;
     if (widget.todo != null) {
@@ -234,128 +268,130 @@ class _TodoEditorScreenState extends State<TodoEditorScreen> {
       appBar: AppBar(
         title: Text(widget.todo != null ? 'Edit Task' : 'Create Task'),
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            TextFormField(
-              controller: _title,
-              decoration: const InputDecoration(
-                labelText: 'Title',
-                hintText: 'What needs to be done?',
-                border: OutlineInputBorder(),
+      body: _loadingTodos
+          ? const Center(child: CircularProgressIndicator())
+          : Form(
+              key: _formKey,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  TextFormField(
+                    controller: _title,
+                    decoration: const InputDecoration(
+                      labelText: 'Title',
+                      hintText: 'What needs to be done?',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (s) => (s ?? '').trim().isEmpty ? 'Title is required' : null,
+                    textCapitalization: TextCapitalization.sentences,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _desc,
+                    decoration: const InputDecoration(
+                      labelText: 'Description',
+                      hintText: 'Add details (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                    maxLines: 3,
+                    textCapitalization: TextCapitalization.sentences,
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: _type,
+                    decoration: const InputDecoration(
+                      labelText: 'Task Type',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'one-time', child: Text('One-time Task')),
+                      DropdownMenuItem(value: 'daily', child: Text('Daily Recurring')),
+                      DropdownMenuItem(value: 'weekly', child: Text('Weekly (Mon-Sat)')),
+                    ],
+                    onChanged: (v) => setState(() => _type = v ?? _type),
+                  ),
+                  const SizedBox(height: 16),
+                  if (_type == 'one-time') ...[
+                    ListTile(
+                      title: Text(
+                        _selectedDate == null
+                            ? 'Date: Today (tap to change)'
+                            : 'Date: ${DateHelper.toIsoDateString(_selectedDate!)}',
+                      ),
+                      leading: const Icon(Icons.calendar_today),
+                      trailing: _selectedDate != null
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () => setState(() => _selectedDate = null),
+                            )
+                          : null,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      onTap: _pickDate,
+                    ),
+                    const SizedBox(height: 12),
+                    ListTile(
+                      title: Text(_time.isEmpty ? 'Time (optional)' : 'Time: $_time'),
+                      leading: const Icon(Icons.access_time),
+                      trailing: _time.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () => setState(() => _time = ''),
+                            )
+                          : null,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      onTap: _pickTime,
+                    ),
+                  ] else ...[
+                    ListTile(
+                      title: Text(_time.isEmpty ? 'Time (optional)' : 'Time: $_time'),
+                      subtitle: const Text('When this task occurs each day/week'),
+                      leading: const Icon(Icons.access_time),
+                      trailing: _time.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () => setState(() => _time = ''),
+                            )
+                          : null,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      onTap: _pickTime,
+                    ),
+                    const SizedBox(height: 12),
+                    if (_type == 'weekly') ...[
+                      const Text(
+                        'Select Weekdays (Monday - Saturday)',
+                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                      ),
+                      const SizedBox(height: 12),
+                      _weekdayChips(),
+                    ],
+                  ],
+                  const SizedBox(height: 24),
+                  FilledButton.icon(
+                    onPressed: _saving ? null : _save,
+                    icon: _saving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.check),
+                    label: Text(widget.todo != null ? 'Update Task' : 'Create Task'),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                  ),
+                ],
               ),
-              validator: (s) => (s ?? '').trim().isEmpty ? 'Title is required' : null,
-              textCapitalization: TextCapitalization.sentences,
             ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _desc,
-              decoration: const InputDecoration(
-                labelText: 'Description',
-                hintText: 'Add details (optional)',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
-              textCapitalization: TextCapitalization.sentences,
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              value: _type,
-              decoration: const InputDecoration(
-                labelText: 'Task Type',
-                border: OutlineInputBorder(),
-              ),
-              items: const [
-                DropdownMenuItem(value: 'one-time', child: Text('One-time Task')),
-                DropdownMenuItem(value: 'daily', child: Text('Daily Recurring')),
-                DropdownMenuItem(value: 'weekly', child: Text('Weekly (Mon-Sat)')),
-              ],
-              onChanged: (v) => setState(() => _type = v ?? _type),
-            ),
-            const SizedBox(height: 16),
-            if (_type == 'one-time') ...[
-              ListTile(
-                title: Text(
-                  _selectedDate == null
-                      ? 'Date: Today (tap to change)'
-                      : 'Date: ${DateHelper.toIsoDateString(_selectedDate!)}',
-                ),
-                leading: const Icon(Icons.calendar_today),
-                trailing: _selectedDate != null
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () => setState(() => _selectedDate = null),
-                      )
-                    : null,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(color: Colors.grey.shade300),
-                ),
-                onTap: _pickDate,
-              ),
-              const SizedBox(height: 12),
-              ListTile(
-                title: Text(_time.isEmpty ? 'Time (optional)' : 'Time: $_time'),
-                leading: const Icon(Icons.access_time),
-                trailing: _time.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () => setState(() => _time = ''),
-                      )
-                    : null,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(color: Colors.grey.shade300),
-                ),
-                onTap: _pickTime,
-              ),
-            ] else ...[
-              ListTile(
-                title: Text(_time.isEmpty ? 'Time (optional)' : 'Time: $_time'),
-                subtitle: const Text('When this task occurs each day/week'),
-                leading: const Icon(Icons.access_time),
-                trailing: _time.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () => setState(() => _time = ''),
-                      )
-                    : null,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(color: Colors.grey.shade300),
-                ),
-                onTap: _pickTime,
-              ),
-              const SizedBox(height: 12),
-              if (_type == 'weekly') ...[
-                const Text(
-                  'Select Weekdays (Monday - Saturday)',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
-                ),
-                const SizedBox(height: 12),
-                _weekdayChips(),
-              ],
-            ],
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: _saving ? null : _save,
-              icon: _saving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Icon(Icons.check),
-              label: Text(widget.todo != null ? 'Update Task' : 'Create Task'),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

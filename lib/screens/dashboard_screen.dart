@@ -307,13 +307,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _openEditor({Map<String, dynamic>? todo}) async {
-    final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => TodoEditorScreen(todo: todo)),
-    );
-    if (result == true && mounted) {
-      await _fetchForRange(forceRefresh: true);
-    }
+  final result = await Navigator.of(context).push<bool>(
+    MaterialPageRoute(builder: (_) => TodoEditorScreen(todo: todo)), // Todos loaded inside editor
+  );
+  if (result == true && mounted) {
+    await _fetchForRange(forceRefresh: true);
   }
+}
 
   Future<void> _openSchedule() async {
     final result = await Navigator.of(context).push<bool>(

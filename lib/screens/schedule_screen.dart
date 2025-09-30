@@ -47,103 +47,146 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     }
   }
 
-  Future<void> _createScheduleBlock() async {
-    final titleCtl = TextEditingController();
-    String selDay = 'monday';
-    final startTimeCtl = TextEditingController(text: '09:00');
-    final endTimeCtl = TextEditingController(text: '10:00');
+ Future<void> _createScheduleBlock() async {
+  final titleCtl = TextEditingController();
+  String selDay = 'monday';
+  TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
+  TimeOfDay endTime = const TimeOfDay(hour: 17, minute: 0);
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('Create Schedule Block'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: titleCtl,
-                      decoration: const InputDecoration(
-                        labelText: 'Title',
-                        hintText: 'e.g., School, Work',
-                      ),
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (c) {
+      return StatefulBuilder(
+        builder: (context, setDialogState) {
+          // Helper to format TimeOfDay to HH:mm (24-hour)
+          String formatTime(TimeOfDay time) {
+            return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+          }
+
+          return AlertDialog(
+            title: const Text('Create Schedule Block'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: titleCtl,
+                    decoration: const InputDecoration(
+                      labelText: 'Title',
+                      hintText: 'e.g., School, Work',
                     ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      value: selDay,
-                      decoration: const InputDecoration(labelText: 'Day'),
-                      items: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
-                          .map((d) => DropdownMenuItem(
-                                value: d,
-                                child: Text(d[0].toUpperCase() + d.substring(1)),
-                              ))
-                          .toList(),
-                      onChanged: (v) => setDialogState(() => selDay = v ?? selDay),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: startTimeCtl,
-                      decoration: const InputDecoration(
-                        labelText: 'Start Time',
-                        hintText: 'HH:mm',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: endTimeCtl,
-                      decoration: const InputDecoration(
-                        labelText: 'End Time',
-                        hintText: 'HH:mm',
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: selDay,
+                    decoration: const InputDecoration(labelText: 'Day'),
+                    items: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+                        .map((d) => DropdownMenuItem(
+                              value: d,
+                              child: Text(d[0].toUpperCase() + d.substring(1)),
+                            ))
+                        .toList(),
+                    onChanged: (v) => setDialogState(() => selDay = v ?? selDay),
+                  ),
+                  const SizedBox(height: 12),
+                  ListTile(
+                    title: Text('Start: ${formatTime(startTime)}'),
+                    leading: const Icon(Icons.access_time),
+                    shape: RoundedRectangleBorder(
+  side: BorderSide(color: Colors.grey.shade300),
+  borderRadius: BorderRadius.circular(8),
+),
+
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: startTime,
+                        builder: (context, child) {
+                          return MediaQuery(
+                            data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+                            child: child!,
+                          );
+                        },
+                      );
+                      if (picked != null) {
+                        setDialogState(() => startTime = picked);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  ListTile(
+                    title: Text('End: ${formatTime(endTime)}'),
+                    leading: const Icon(Icons.access_time),
+                    shape: RoundedRectangleBorder(
+  side: BorderSide(color: Colors.grey.shade300),
+  borderRadius: BorderRadius.circular(8),
+),
+
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: endTime,
+                        builder: (context, child) {
+                          return MediaQuery(
+                            data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+                            child: child!,
+                          );
+                        },
+                      );
+                      if (picked != null) {
+                        setDialogState(() => endTime = picked);
+                      }
+                    },
+                  ),
+                ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(c).pop(false),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(c).pop(true),
-                  child: const Text('Create'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(c).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(c).pop(true),
+                child: const Text('Create'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
 
-    if (ok != true) return;
+  if (ok != true) return;
 
-    final payload = {
-      'title': titleCtl.text.trim(),
-      'type': 'schedule-block',
-      'schedule': [
-        {
-          'day': selDay,
-          'start': startTimeCtl.text.trim(),
-          'end': endTimeCtl.text.trim()
-        }
-      ]
-    };
+  // Format times to HH:mm (24-hour format)
+  final startTimeStr = '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}';
+  final endTimeStr = '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}';
 
-    final res = await TodoService.createTodo(payload);
-    
-    if (!mounted) return;
+  final payload = {
+    'title': titleCtl.text.trim(),
+    'type': 'schedule-block',
+    'schedule': [
+      {
+        'day': selDay,
+        'start': startTimeStr,
+        'end': endTimeStr,
+      }
+    ]
+  };
 
-    if (res['ok'] == true) {
-      _showSnackbar('Schedule block created');
-      _loadSchedule();
-    } else {
-      final msg = res['error'] ?? res['body']?['error'] ?? 'Failed to create';
-      _showSnackbar(msg, isError: true);
-    }
+  final res = await TodoService.createTodo(payload);
+  
+  if (!mounted) return;
+
+  if (res['ok'] == true) {
+    _showSnackbar('Schedule block created');
+    _loadSchedule();
+  } else {
+    final msg = res['error'] ?? res['body']?['error'] ?? 'Failed to create';
+    _showSnackbar(msg, isError: true);
   }
+}
 
   Future<void> _deleteSchedule(String id) async {
     final confirmed = await showDialog<bool>(
