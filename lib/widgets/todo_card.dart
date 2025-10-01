@@ -1,5 +1,7 @@
-// lib/widgets/todo_card.dart
 import 'package:flutter/material.dart';
+import 'todo_detail_sheet.dart';
+import '../screens/todo_editor_screen.dart'; // your editor
+import '../services/todo_service.dart';
 
 class TodoCard extends StatelessWidget {
   final Map<String, dynamic> todo;
@@ -21,17 +23,7 @@ class TodoCard extends StatelessWidget {
     this.onComplete,
   });
 
-  Color _categoryColor() {
-    final cat = todo['category'];
-    if (cat is Map && (cat['color'] ?? '').toString().isNotEmpty) {
-      try {
-        final hex = cat['color'].toString();
-        if (hex.startsWith('#')) {
-          final value = int.parse(hex.substring(1), radix: 16);
-          return Color(0xFF000000 | value);
-        }
-      } catch (_) {}
-    }
+  Color _priorityColor() {
     final p = todo['priority'] ?? 'medium';
     switch (p) {
       case 'high':
@@ -52,128 +44,194 @@ class TodoCard extends StatelessWidget {
     final time = todo['time'] ?? todo['recurrence']?['time'];
     final category = todo['category'];
     final categoryLabel = (category is Map) ? (category['name'] ?? '') : '';
-    final color = _categoryColor();
+    final tags = (todo['tags'] as List<dynamic>? ?? []).cast<String>();
+    final color = _priorityColor();
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      elevation: isCompleted ? 0 : 1,
+      elevation: isCompleted ? 0 : 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Opacity(
         opacity: isCompleted ? 0.6 : 1.0,
         child: Row(
           children: [
+            // Priority/Category Strip
             Container(
               width: 6,
-              height: 96,
+              height: 120,
               decoration: BoxDecoration(
                 color: color,
                 borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
               ),
             ),
             const SizedBox(width: 10),
+            // Expanded content with tap to open detailed sheet
             Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        GestureDetector(
-                          onTap: isCompleted ? null : onComplete,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: isCompleted ? color : Colors.transparent,
-                              border: Border.all(
-                                color: isCompleted ? color : Colors.grey.shade300,
-                                width: 1.6,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () {
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                    ),
+                    builder: (_) => TodoDetailSheet(
+                      todo: todo,
+                      occurrenceDate: occurrenceDate,
+                      onEdit: () async {
+                        Navigator.of(context).pop(); // close sheet first
+                        final result = await Navigator.of(context).push<bool>(
+                          MaterialPageRoute(builder: (_) => TodoEditorScreen(todo: todo)),
+                        );
+                        if (result == true) {
+                          onEdit?.call(); // null-aware call
+                        }
+                      },
+                      onDelete: () async {
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (_) => AlertDialog(
+                            title: const Text('Delete Task'),
+                            content: const Text('Are you sure you want to delete this task?'),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+                              FilledButton(
+                                onPressed: () => Navigator.of(context).pop(true),
+                                child: const Text('Delete'),
+                                style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
                               ),
-                            ),
-                            child: isCompleted
-                                ? const Icon(Icons.check, size: 18, color: Colors.white)
-                                : null,
+                            ],
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                title,
-                                style: TextStyle(
-                                  decoration: isCompleted
-                                      ? TextDecoration.lineThrough
-                                      : null,
-                                  fontWeight: FontWeight.w700,
-                                  color: isCompleted ? Colors.grey : Colors.black,
+                        );
+                        if (confirmed == true) {
+                          final id = todo['_id'] ?? todo['id'];
+                          await TodoService.deleteTodo(id);
+                          Navigator.of(context).pop(); // close sheet after delete
+                          onDelete?.call(); // null-aware call
+                        }
+                      },
+                    ),
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          // Complete checkbox
+                          GestureDetector(
+                            onTap: isCompleted ? null : onComplete,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: isCompleted ? color : Colors.transparent,
+                                border: Border.all(
+                                  color: isCompleted ? color : Colors.grey.shade300,
+                                  width: 1.6,
                                 ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
                               ),
-                              const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  if (time != null) ...[
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: Colors.grey.shade100,
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          const Icon(Icons.access_time,
-                                              size: 12, color: Colors.black54),
-                                          const SizedBox(width: 6),
-                                          Text(time,
-                                              style: const TextStyle(fontSize: 12)),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                  ],
-                                  if (categoryLabel.isNotEmpty)
-                                    Flexible(
-                                      child: Chip(
-                                        label: Text(categoryLabel),
-                                        backgroundColor: color.withOpacity(0.12),
-                                        visualDensity: VisualDensity.compact,
-                                        materialTapTargetSize:
-                                            MaterialTapTargetSize.shrinkWrap,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              if (desc.toString().isNotEmpty) ...[
-                                const SizedBox(height: 8),
+                              child: isCompleted
+                                  ? const Icon(Icons.check, size: 18, color: Colors.white)
+                                  : null,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          // Task info
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
                                 Text(
-                                  desc,
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                        color: isCompleted ? Colors.grey : Colors.black87,
-                                      ),
+                                  title,
+                                  style: TextStyle(
+                                    decoration: isCompleted ? TextDecoration.lineThrough : null,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 16,
+                                    color: isCompleted ? Colors.grey : Colors.black,
+                                  ),
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                 ),
+                                const SizedBox(height: 4),
+                                if (desc.isNotEmpty)
+                                  Text(
+                                    desc,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: isCompleted ? Colors.grey : Colors.black87,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                const SizedBox(height: 6),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  children: [
+                                    if (time != null)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey.shade100,
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(Icons.access_time, size: 12, color: Colors.black54),
+                                            const SizedBox(width: 4),
+                                            Text(time, style: const TextStyle(fontSize: 12)),
+                                          ],
+                                        ),
+                                      ),
+                                    if (categoryLabel.isNotEmpty)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: color.withOpacity(0.12),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          categoryLabel,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: color,
+                                          ),
+                                        ),
+                                      ),
+                                    for (final tag in tags)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.blueGrey.withOpacity(0.12),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Text(tag, style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
+                                      ),
+                                  ],
+                                ),
                               ],
-                            ],
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
             if (!isPast && !isCompleted)
               PopupMenuButton<String>(
                 onSelected: (v) {
-                  if (v == 'edit' && onEdit != null) onEdit!();
-                  if (v == 'delete' && onDelete != null) onDelete!();
+                  if (v == 'edit') onEdit?.call();
+                  if (v == 'delete') onDelete?.call();
                 },
                 itemBuilder: (_) => [
                   PopupMenuItem(
@@ -205,7 +263,6 @@ class TodoCard extends StatelessWidget {
               )
             else
               const SizedBox(width: 12),
-            const SizedBox(width: 6),
           ],
         ),
       ),

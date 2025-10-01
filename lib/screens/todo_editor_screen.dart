@@ -15,7 +15,10 @@ class _TodoEditorScreenState extends State<TodoEditorScreen> {
   final _formKey = GlobalKey<FormState>();
   final _title = TextEditingController();
   final _desc = TextEditingController();
+  final _tagsController = TextEditingController();
+
   String _type = 'one-time';
+  String _priority = 'medium';
   DateTime? _selectedDate;
   String _time = '';
   bool _saving = false;
@@ -25,15 +28,31 @@ class _TodoEditorScreenState extends State<TodoEditorScreen> {
   final List<String> _weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
   final Set<String> _selectedWeekDays = {};
 
+  List<Map<String, dynamic>> _subTasks = [];
+
   @override
   void initState() {
     super.initState();
     _loadAllTodos();
-    
+
     final t = widget.todo;
     if (t != null) {
       _title.text = t['title'] ?? '';
       _desc.text = t['description'] ?? '';
+      _priority = t['priority'] ?? 'medium';
+      _tagsController.text = (t['tags'] as List<dynamic>?)?.join(', ') ?? '';
+
+      // Load subtasks if exist
+      final subs = (t['subTasks'] as List<dynamic>?)
+              ?.map((s) => {
+                    'title': s['title'] ?? '',
+                    'description': s['description'] ?? '',
+                    'completed': s['completed'] ?? false,
+                    'priority': s['priority'] ?? 'medium',
+                  })
+              .toList() ??
+          [];
+      _subTasks = List<Map<String, dynamic>>.from(subs);
 
       final rec = t['recurrence'] ?? {};
       final rtype = (rec['type'] ?? t['type']) as String;
@@ -62,12 +81,12 @@ class _TodoEditorScreenState extends State<TodoEditorScreen> {
     setState(() => _loadingTodos = true);
     final start = DateTime.now().subtract(const Duration(days: 365));
     final end = DateTime.now().add(const Duration(days: 365));
-    
+
     final res = await TodoService.fetchRange(
       DateHelper.toIsoDateString(start),
       DateHelper.toIsoDateString(end),
     );
-    
+
     setState(() => _loadingTodos = false);
 
     if (res['ok'] == true) {
@@ -82,6 +101,7 @@ class _TodoEditorScreenState extends State<TodoEditorScreen> {
   void dispose() {
     _title.dispose();
     _desc.dispose();
+    _tagsController.dispose();
     super.dispose();
   }
 
@@ -130,7 +150,7 @@ class _TodoEditorScreenState extends State<TodoEditorScreen> {
 
     if (conflict['hasConflict'] == true) {
       final message = conflict['message'] ?? 'Time conflict detected';
-      
+
       final proceed = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
@@ -191,6 +211,9 @@ class _TodoEditorScreenState extends State<TodoEditorScreen> {
     final payload = <String, dynamic>{
       'title': _title.text.trim(),
       'description': _desc.text.trim(),
+      'priority': _priority,
+      'tags': _tagsController.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList(),
+      'subTasks': _subTasks,
     };
 
     if (_type == 'one-time') {
@@ -262,6 +285,23 @@ class _TodoEditorScreenState extends State<TodoEditorScreen> {
     );
   }
 
+  Widget _priorityDropdown() {
+    return DropdownButtonFormField<String>(
+      value: _priority,
+      decoration: const InputDecoration(
+        labelText: 'Priority',
+        border: OutlineInputBorder(),
+      ),
+      items: const [
+        DropdownMenuItem(value: 'low', child: Text('Low')),
+        DropdownMenuItem(value: 'medium', child: Text('Medium')),
+        DropdownMenuItem(value: 'high', child: Text('High')),
+        DropdownMenuItem(value: 'critical', child: Text('Critical')),
+      ],
+      onChanged: (v) => setState(() => _priority = v ?? 'medium'),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -295,6 +335,17 @@ class _TodoEditorScreenState extends State<TodoEditorScreen> {
                     ),
                     maxLines: 3,
                     textCapitalization: TextCapitalization.sentences,
+                  ),
+                  const SizedBox(height: 16),
+                  _priorityDropdown(),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _tagsController,
+                    decoration: const InputDecoration(
+                      labelText: 'Tags',
+                      hintText: 'Comma-separated tags (e.g. work, personal)',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
@@ -374,6 +425,8 @@ class _TodoEditorScreenState extends State<TodoEditorScreen> {
                       _weekdayChips(),
                     ],
                   ],
+                  const SizedBox(height: 16),
+                 
                   const SizedBox(height: 24),
                   FilledButton.icon(
                     onPressed: _saving ? null : _save,
