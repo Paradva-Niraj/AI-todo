@@ -128,49 +128,64 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   List<Map<String, dynamic>> _occurrencesForDay(DateTime day) {
-    final dayOfWeek = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][day.weekday % 7];
-    final out = <Map<String, dynamic>>[];
+  final dayOfWeek = [
+    "sunday",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday"
+  ][day.weekday % 7];
+  final out = <Map<String, dynamic>>[];
 
-    for (final item in _fetchedTodos) {
-      final t = Map<String, dynamic>.from(item as Map<String, dynamic>);
-      final type = t['type'];
+  for (final item in _fetchedTodos) {
+    final t = Map<String, dynamic>.from(item as Map<String, dynamic>);
+    final type = t['type'];
 
-      if (type == 'one-time') {
-        if (t['date'] != null) {
-          final taskDate = DateHelper.fromIsoDateString(t['date']);
-          if (taskDate != null && DateHelper.isSameDay(taskDate, day)) out.add(t);
-        } else if (DateHelper.isToday(day)) out.add(t);
-      } else if (type == 'reminder') {
-        if (t['date'] != null) {
-          final taskDate = DateHelper.fromIsoDateString(t['date']);
-          if (taskDate != null && DateHelper.isSameDay(taskDate, day)) out.add(t);
-        } else {
-          out.add(t);
-        }
-      } else if (type == 'recurring') {
-        final rec = t['recurrence'] ?? {};
-        final rtype = rec['type'] ?? 'none';
-        if (rtype == 'daily') out.add(t);
-        else if (rtype == 'weekly') {
-          final daysArr = (rec['days'] as List<dynamic>?)?.map((e) => e.toString().toLowerCase()).toList() ?? [];
-          if (daysArr.contains(dayOfWeek)) out.add(t);
-        }
-      } else {
-        out.add(t); // schedule-block or fallback
-      }
+    // IMPORTANT CHANGE: Exclude schedule-block from regular task occurrences
+    if (type == 'schedule-block') {
+      continue; // Skip schedule blocks - they are not regular tasks
     }
 
-    out.sort((a, b) {
-      final tA = (a['time'] ?? a['recurrence']?['time']) as String?;
-      final tB = (b['time'] ?? b['recurrence']?['time']) as String?;
-      if (tA == null && tB == null) return 0;
-      if (tA == null) return 1;
-      if (tB == null) return -1;
-      return tA.compareTo(tB);
-    });
-
-    return out;
+    if (type == 'one-time') {
+      if (t['date'] != null) {
+        final taskDate = DateHelper.fromIsoDateString(t['date']);
+        if (taskDate != null && DateHelper.isSameDay(taskDate, day)) out.add(t);
+      } else if (DateHelper.isToday(day)) out.add(t);
+    } else if (type == 'reminder') {
+      if (t['date'] != null) {
+        final taskDate = DateHelper.fromIsoDateString(t['date']);
+        if (taskDate != null && DateHelper.isSameDay(taskDate, day)) out.add(t);
+      } else {
+        out.add(t);
+      }
+    } else if (type == 'recurring') {
+      final rec = t['recurrence'] ?? {};
+      final rtype = rec['type'] ?? 'none';
+      if (rtype == 'daily') out.add(t);
+      else if (rtype == 'weekly') {
+        final daysArr = (rec['days'] as List<dynamic>?)
+                ?.map((e) => e.toString().toLowerCase())
+                .toList() ??
+            [];
+        if (daysArr.contains(dayOfWeek)) out.add(t);
+      }
+    }
+    // Remove the 'else' clause that was adding all other types including schedule-block
   }
+
+  out.sort((a, b) {
+    final tA = (a['time'] ?? a['recurrence']?['time']) as String?;
+    final tB = (b['time'] ?? b['recurrence']?['time']) as String?;
+    if (tA == null && tB == null) return 0;
+    if (tA == null) return 1;
+    if (tB == null) return -1;
+    return tA.compareTo(tB);
+  });
+
+  return out;
+}
 
   bool _isCompletedForDay(Map<String, dynamic> t, DateTime day) {
     if (t['completed'] == true) return true;

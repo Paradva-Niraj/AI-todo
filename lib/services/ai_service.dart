@@ -2,9 +2,12 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../config.dart';
 
 class AiService {
-  static const String baseUrl = 'http://localhost:3000';
+  static const String baseUrl_local = 'http://localhost:3000';
+  static const String baseUrl = '${AppConfig.backendUrl}';
+
 
   static Future<String?> _token() async {
     final prefs = await SharedPreferences.getInstance();
