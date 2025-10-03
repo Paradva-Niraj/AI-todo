@@ -1,9 +1,6 @@
 // lib/screens/ai_screen.dart - Enhanced AI Screen with Smart Features
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../services/ai_service.dart';
-import '../services/todo_service.dart';
 import '../utils/date_helper.dart';
 
 class AiScreen extends StatefulWidget {
@@ -331,7 +328,7 @@ class _AiScreenState extends State<AiScreen> {
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: DropdownButtonFormField<String>(
-                value: _selectedMode,
+                initialValue: _selectedMode,
                 decoration: InputDecoration(
                   labelText: 'Select AI Mode',
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),

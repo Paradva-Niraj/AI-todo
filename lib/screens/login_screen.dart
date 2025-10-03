@@ -5,7 +5,6 @@ import '../widgets/centered_text_field.dart';
 import '../widgets/animated_submit_button.dart';
 import 'register_screen.dart';
 import 'dashboard_screen.dart';
-import 'home_screen.dart';
 import '../services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
