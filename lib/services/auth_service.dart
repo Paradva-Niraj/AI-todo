@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 class AuthService {
   static const String baseUrl_local = 'http://localhost:3000';
-  static const String baseUrl = '${AppConfig.backendUrl}';
+  static const String baseUrl = AppConfig.backendUrl;
 
   static Future<Map<String, dynamic>> register(String name, String email, String password) async {
     final url = Uri.parse('$baseUrl/api/auth/register');

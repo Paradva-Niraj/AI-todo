@@ -98,8 +98,8 @@ class TodoCard extends StatelessWidget {
                               TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
                               FilledButton(
                                 onPressed: () => Navigator.of(context).pop(true),
-                                child: const Text('Delete'),
                                 style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+                                child: const Text('Delete'),
                               ),
                             ],
                           ),

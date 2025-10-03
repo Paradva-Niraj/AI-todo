@@ -6,7 +6,7 @@ import '../config.dart';
 
 class AiService {
   static const String baseUrl_local = 'http://localhost:3000';
-  static const String baseUrl = '${AppConfig.backendUrl}';
+  static const String baseUrl = AppConfig.backendUrl;
 
 
   static Future<String?> _token() async {

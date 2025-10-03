@@ -163,8 +163,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } else if (type == 'recurring') {
       final rec = t['recurrence'] ?? {};
       final rtype = rec['type'] ?? 'none';
-      if (rtype == 'daily') out.add(t);
-      else if (rtype == 'weekly') {
+      if (rtype == 'daily') {
+        out.add(t);
+      } else if (rtype == 'weekly') {
         final daysArr = (rec['days'] as List<dynamic>?)
                 ?.map((e) => e.toString().toLowerCase())
                 .toList() ??

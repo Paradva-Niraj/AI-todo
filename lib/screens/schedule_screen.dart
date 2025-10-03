@@ -78,7 +78,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value: selDay,
+                    initialValue: selDay,
                     decoration: const InputDecoration(labelText: 'Day'),
                     items: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
                         .map((d) => DropdownMenuItem(

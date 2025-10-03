@@ -287,7 +287,7 @@ class _TodoEditorScreenState extends State<TodoEditorScreen> {
 
   Widget _priorityDropdown() {
     return DropdownButtonFormField<String>(
-      value: _priority,
+      initialValue: _priority,
       decoration: const InputDecoration(
         labelText: 'Priority',
         border: OutlineInputBorder(),
@@ -349,7 +349,7 @@ class _TodoEditorScreenState extends State<TodoEditorScreen> {
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
-                    value: _type,
+                    initialValue: _type,
                     decoration: const InputDecoration(
                       labelText: 'Task Type',
                       border: OutlineInputBorder(),
